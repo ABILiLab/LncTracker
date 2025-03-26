@@ -113,8 +113,8 @@ def prepare_sequence(seq,to_ix, pos_dim=10):
     idxs=[]
     pos_encode = sinusoidal_position_encoding(len(seq), pos_dim)
     for j,char in enumerate(seq):
-        ANF=[seq[0:j+1].count(seq[j])/(j+1)] # 累积核苷酸频率
-        subidx=to_ix[char]+[N_to_EIIP[char]]+N_to_NCP[char]+ANF # 5+1+3+1+10=20维特征
+        ANF=[seq[0:j+1].count(seq[j])/(j+1)] 
+        subidx=to_ix[char]+[N_to_EIIP[char]]+N_to_NCP[char]+ANF 
         idxs.append(subidx)
     idx = torch.tensor(idxs, dtype=torch.float)
     return torch.concat([idx,pos_encode],axis=1)
@@ -128,7 +128,7 @@ def dotbracket_to_graph(dotbracket):
             bases.append(i)
         elif c == ')':
             neighbor = bases.pop()
-            G.add_edge(i, neighbor, edge_type='base_pair') # 将配对核苷酸连接
+            G.add_edge(i, neighbor, edge_type='base_pair') 
         elif c == '.':
             G.add_node(i)
         else:
@@ -136,16 +136,15 @@ def dotbracket_to_graph(dotbracket):
             return None
 
         if i > 0:
-            G.add_edge(i, i - 1, edge_type='adjacent') # 按序列顺序将相邻核苷酸连接
+            G.add_edge(i, i - 1, edge_type='adjacent') 
     return G
 
-class UnitLncRNADataset(InMemoryDataset): # folding1表征的二级结构
+class UnitLncRNADataset(InMemoryDataset): 
     def __init__(self, root='data', dataset='g1', view='train', 
                  df_data=None, tokenizer=None, foldings=None, fea_kmer=None, fea_cksnap=None, emb_k=3, emb_dim=512, transform=None,
                  pre_transform=None, device="cuda"
                  ):
 
-        #root is required for save preprocessed data, default is '/tmp'
         super(UnitLncRNADataset, self).__init__(root, transform, pre_transform)
         # self.records = records
         self.dataset = dataset
@@ -196,7 +195,6 @@ class UnitLncRNADataset(InMemoryDataset): # folding1表征的二级结构
             # dot_bracket_string_2 = foldings_2[seq_str][0]
             seq_attr = prepare_sequence(seq_str, word_to_ix)  # each seq dim:(len(seq),10)
 
-            # 将位置信息进行one-hot编码
             locations = str(row.Label).split(',')
             label_embedded = self.tokenizer.mlb.transform([locations])
 
@@ -207,12 +205,10 @@ class UnitLncRNADataset(InMemoryDataset): # folding1表征的二级结构
             y = y.view(1, len(self.tokenizer.mlb.classes_))
 
 
-            edges = list(graph.edges(data=True)) # data=True时查看边的所有属性，默认为边的俩顶点
+            edges = list(graph.edges(data=True)) 
             edge_attr = torch.Tensor([[0, 1] if e[2]['edge_type'] == 'adjacent' else [1, 0] for e in edges])
             edge_index = torch.LongTensor(list(graph.edges())).t().contiguous()
 
-            # data.cksnap和data.kmer表示序列特征
-            # data.x表示二级结构中的节点特征，data.edge_index表示所有边连接的两个节点，data.edge_attr表示边的类型（邻接和配对）
             data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y)
             data.cksnap = torch.tensor(self.fea_cksnap[seq_str],dtype=torch.float32)
             data.kmer = torch.tensor(self.fea_kmer[seq_str],dtype=torch.float32)
