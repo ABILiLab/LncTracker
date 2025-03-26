@@ -8,7 +8,7 @@ def train_valid(model, train_loader, valid_loader, epochs, patience, optimizer, 
     best_val_auc = 0
     best_model = None
     best_val_loss = float('inf')
-    no_improvement_count = 0  # 无改进的epoch计数
+    no_improvement_count = 0  
     for epoch in range(epochs):
         print(f'Epoch {epoch + 1} of {epochs}')
         train_loss = train_step(model, train_loader, optimizer, criterion, device)
