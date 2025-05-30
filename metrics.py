@@ -21,6 +21,7 @@ def label_quantity(label, predict):
     fp = np.sum(np.logical_and(1-label,predict),axis=0)
     tn = np.sum(np.logical_and(1-label, 1-predict),axis=0)
     fn = np.sum(np.logical_and(label, 1-predict),axis=0)
+    print(tp,fp,tn,fn)
     return np.stack([tp,fp,tn,fn], axis=0).astype('float')
 
 def label_recall(label, predict):
@@ -67,48 +68,96 @@ def AvgF1(targets, predict):
 from sklearn import metrics
 import numpy as np
 
-def evaluate_all_metrics(targets, predict, thres=0.5):
+def evaluate_all_metrics(targets, predict, isMultiLabel, thres=0.5):
 
-    predict_binary = (predict >= thres).astype(int)
     
-    ex_acc = round(example_accuracy(targets, predict_binary),3)
-    ham_loss = round(hamming_loss(targets, predict_binary),3)
-    one_error = round(zero_one_loss(targets, predict_binary, normalize=True),3)
-    cov = round(coverage_error(targets, predict_binary),3)
-    rank_loss = round(label_ranking_loss(targets, predict_binary),3)
-    ap = round(average_precision_score(targets, predict_binary, average='weighted'),3)
-    # single_label_acc = label_accuracy(targets, predict_binary)
-    # single_label_recall = label_recall(targets, predict_binary)
 
-    mccs = []
-    for i in range(targets.shape[1]):
-        mccs.append(round(matthews_corrcoef(targets[:, i], predict_binary[:,i]),3))
+    if isMultiLabel:
+        predict_binary = (predict >= thres).astype(int)
+        ex_acc = round(example_accuracy(targets, predict_binary),3)
+        ham_loss = round(hamming_loss(targets, predict_binary),3)
+        one_error = round(zero_one_loss(targets, predict_binary, normalize=True),3)
+        cov = round(coverage_error(targets, predict_binary),3)
+        rank_loss = round(label_ranking_loss(targets, predict_binary),3)
+        ap = round(average_precision_score(targets, predict_binary, average='weighted'),3)
+        # single_label_acc = label_accuracy(targets, predict_binary)
+        # single_label_recall = label_recall(targets, predict_binary)
 
-    avgF1 = AvgF1(targets, predict_binary)
+        mccs = []
+        for i in range(targets.shape[1]):
+            mccs.append(round(matthews_corrcoef(targets[:, i], predict_binary[:,i]),3))
+
+        avgF1 = AvgF1(targets, predict_binary)
+        
+        miP = round(skmetrics.precision_score(targets, predict_binary, average='micro'),3)
+        maP = round(skmetrics.precision_score(targets, predict_binary, average='macro'),3)
+        miR = round(skmetrics.recall_score(targets, predict_binary, average='micro'),3)
+        maR = round(skmetrics.recall_score(targets, predict_binary, average='macro'),3)
+
+        AUCs = [round(skmetrics.roc_auc_score(targets[:,i],predict[:,i]),3) for i in range(targets.shape[1])]
+        avgAUC = round(np.mean(AUCs),3)
     
-    miP = round(skmetrics.precision_score(targets, predict_binary, average='micro'),3)
-    maP = round(skmetrics.precision_score(targets, predict_binary, average='macro'),3)
-    miR = round(skmetrics.recall_score(targets, predict_binary, average='micro'),3)
-    maR = round(skmetrics.recall_score(targets, predict_binary, average='macro'),3)
+        metrics_dict = {
+            "Example Accuracy": ex_acc,
+            "Hamming Loss": ham_loss,
+            "Zero-One Loss": one_error,
+            "Coverage Error": cov,
+            "Ranking Loss": rank_loss,
+            "Average Precision Score": ap,
+            # "Single Label Accuracy": single_label_acc,
+            # "Single Label Recall": single_label_recall,
+            "Matthews Correlation Coefficient": mccs,
+            "Average F1 Score": avgF1,
+            "Micro Precision": miP,
+            "Micro Recall": miR,
+            "Macro Precision": maP,
+            "Macro Recall": maR,
+            "Average AUC": avgAUC,
+            "AUC": AUCs
+        }
+    else:
+        predict_binary = np.zeros_like(predict)
+        predict_binary[np.arange(predict.shape[0]), predict.argmax(axis=1)] = 1
+        ex_acc = round(example_accuracy(targets, predict_binary),3)
+        # ham_loss = round(hamming_loss(targets, predict_binary),3)
+        one_error = round(zero_one_loss(targets, predict_binary, normalize=True),3)
+        # cov = round(coverage_error(targets, predict_binary),3)
+        # rank_loss = round(label_ranking_loss(targets, predict_binary),3)
+        # ap = round(average_precision_score(targets, predict_binary, average='weighted'),3)
+        # single_label_acc = label_accuracy(targets, predict_binary)
+        # single_label_recall = label_recall(targets, predict_binary)
 
-    AUCs = [round(skmetrics.roc_auc_score(targets[:,i],predict[:,i]),3) for i in range(targets.shape[1])]
-    avgAUC = round(np.mean(AUCs),3)
- 
-    metrics_dict = {
-        "Example Accuracy": ex_acc,
-        "Hamming Loss": ham_loss,
-        "Zero-One Loss": one_error,
-        "Coverage Error": cov,
-        "Ranking Loss": rank_loss,
-        "Average Precision Score": ap,
-        # "Single Label Accuracy": single_label_acc,
-        # "Single Label Recall": single_label_recall,
-        "Matthews Correlation Coefficient": mccs,
-        "Average F1 Score": avgF1,
-        "Micro Precision": miP,
-        "Micro Recall": miR,
-        "Average AUC": avgAUC,
-        "AUC": AUCs
-    }
+        mccs = []
+        for i in range(targets.shape[1]):
+            mccs.append(round(matthews_corrcoef(targets[:, i], predict_binary[:,i]),3))
+
+        avgF1 = AvgF1(targets, predict_binary)
+        
+        miP = round(skmetrics.precision_score(targets, predict_binary, average='micro'),3)
+        maP = round(skmetrics.precision_score(targets, predict_binary, average='macro'),3)
+        miR = round(skmetrics.recall_score(targets, predict_binary, average='micro'),3)
+        maR = round(skmetrics.recall_score(targets, predict_binary, average='macro'),3)
+
+        AUCs = [round(skmetrics.roc_auc_score(targets[:,i],predict[:,i]),3) for i in range(targets.shape[1])]
+        avgAUC = round(np.mean(AUCs),3)
     
+        metrics_dict = {
+            "Example Accuracy": ex_acc,
+            # "Hamming Loss": ham_loss,
+            "Zero-One Loss": one_error,
+            # "Coverage Error": cov,
+            # "Ranking Loss": rank_loss,
+            # "Average Precision Score": ap,
+            # "Single Label Accuracy": single_label_acc,
+            # "Single Label Recall": single_label_recall,
+            "Matthews Correlation Coefficient": mccs,
+            "Average F1 Score": avgF1,
+            "Micro Precision": miP,
+            "Micro Recall": miR,
+            "Macro Precision": maP,
+            "Macro Recall": maR,
+            "Average AUC": avgAUC,
+            "AUC": AUCs
+        }
+        
     return metrics_dict
