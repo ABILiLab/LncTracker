@@ -12,11 +12,12 @@ from sklearn.feature_extraction.text import CountVectorizer
 import networkx as nx
 import logging,pickle
 from sklearn.preprocessing import OneHotEncoder, MultiLabelBinarizer
+import re
 
 logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
 
 class SequenceTokenizer:
-    def __init__(self, sequences, labels, k=3):
+    def __init__(self, sequences, labels, isMultiLabel, k=3):
         print('Tokenizing the data...')
 
         # Padding sequences with '-'
@@ -50,8 +51,15 @@ class SequenceTokenizer:
         label_count = 0
         id2label = []
         label2id = {}
-        for label_list in labels:
-            for label in label_list:
+        if isMultiLabel:
+            for label_list in labels:
+                for label in label_list:
+                    if label not in label2id:
+                        label2id[label] = label_count
+                        id2label.append(label)
+                        label_count += 1
+        else:
+            for label in labels:
                 if label not in label2id:
                     label2id[label] = label_count
                     id2label.append(label)
@@ -113,8 +121,8 @@ def prepare_sequence(seq,to_ix, pos_dim=10):
     idxs=[]
     pos_encode = sinusoidal_position_encoding(len(seq), pos_dim)
     for j,char in enumerate(seq):
-        ANF=[seq[0:j+1].count(seq[j])/(j+1)] 
-        subidx=to_ix[char]+[N_to_EIIP[char]]+N_to_NCP[char]+ANF 
+        ANF=[seq[0:j+1].count(seq[j])/(j+1)] # 累积核苷酸频率
+        subidx=to_ix[char]+[N_to_EIIP[char]]+N_to_NCP[char]+ANF # 5+1+3+1+10=20维特征
         idxs.append(subidx)
     idx = torch.tensor(idxs, dtype=torch.float)
     return torch.concat([idx,pos_encode],axis=1)
@@ -128,7 +136,7 @@ def dotbracket_to_graph(dotbracket):
             bases.append(i)
         elif c == ')':
             neighbor = bases.pop()
-            G.add_edge(i, neighbor, edge_type='base_pair') 
+            G.add_edge(i, neighbor, edge_type='base_pair') # 将配对核苷酸连接
         elif c == '.':
             G.add_node(i)
         else:
@@ -136,15 +144,16 @@ def dotbracket_to_graph(dotbracket):
             return None
 
         if i > 0:
-            G.add_edge(i, i - 1, edge_type='adjacent') 
+            G.add_edge(i, i - 1, edge_type='adjacent') # 按序列顺序将相邻核苷酸连接
     return G
 
-class UnitLncRNADataset(InMemoryDataset): 
+class UnitLncRNADataset(InMemoryDataset): # folding1表征的二级结构
     def __init__(self, root='data', dataset='g1', view='train', 
                  df_data=None, tokenizer=None, foldings=None, fea_kmer=None, fea_cksnap=None, emb_k=3, emb_dim=512, transform=None,
-                 pre_transform=None, device="cuda"
+                 pre_transform=None, isMultiLabel=True, device="cuda"
                  ):
 
+        #root is required for save preprocessed data, default is '/tmp'
         super(UnitLncRNADataset, self).__init__(root, transform, pre_transform)
         # self.records = records
         self.dataset = dataset
@@ -155,6 +164,7 @@ class UnitLncRNADataset(InMemoryDataset):
         self.emb_k = emb_k
         self.emb_dim = emb_dim
         self.tokenizer = tokenizer
+        self.isMultiLabel = isMultiLabel
         if os.path.isfile(self.processed_paths[0]):
             print('Pre-processed data found: {}, loading ...'.format(self.processed_paths[0]))
             self.data, self.slices = torch.load(self.processed_paths[0], map_location=device)
@@ -188,6 +198,9 @@ class UnitLncRNADataset(InMemoryDataset):
         for row in df.itertuples():
             des = str(row.Description)
             seq_str = str(row.Sequence)
+            if re.findall(r'[^AGCT]', seq_str.upper()):
+                print("pass 1 records....")
+                continue
             if seq_str not in self.foldings:
                 print("pass 1 records....")
                 continue
@@ -195,20 +208,31 @@ class UnitLncRNADataset(InMemoryDataset):
             # dot_bracket_string_2 = foldings_2[seq_str][0]
             seq_attr = prepare_sequence(seq_str, word_to_ix)  # each seq dim:(len(seq),10)
 
-            locations = str(row.Label).split(',')
-            label_embedded = self.tokenizer.mlb.transform([locations])
+            # 将位置信息进行one-hot编码
+            if self.isMultiLabel:
+                locations = str(row.Label).split(',')
+                # print(locations)
+                label_embedded = self.tokenizer.mlb.transform([locations])
+                # print(label_embedded)
+            else:
+                label_id = self.tokenizer.label2id[str(row.Label)]
+                label_embedded = np.zeros(self.tokenizer.label_count)
+                label_embedded[label_id] = 1
+
 
             graph = dotbracket_to_graph(dot_bracket_string_1)
 
             x = torch.tensor(seq_attr)
             y = torch.Tensor(label_embedded)
-            y = y.view(1, len(self.tokenizer.mlb.classes_))
+            y = y.view(1, self.tokenizer.label_count)
 
 
-            edges = list(graph.edges(data=True)) 
+            edges = list(graph.edges(data=True)) # data=True时查看边的所有属性，默认为边的俩顶点
             edge_attr = torch.Tensor([[0, 1] if e[2]['edge_type'] == 'adjacent' else [1, 0] for e in edges])
             edge_index = torch.LongTensor(list(graph.edges())).t().contiguous()
 
+            # data.cksnap和data.kmer表示序列特征
+            # data.x表示二级结构中的节点特征，data.edge_index表示所有边连接的两个节点，data.edge_attr表示边的类型（邻接和配对）
             data = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y)
             data.cksnap = torch.tensor(self.fea_cksnap[seq_str],dtype=torch.float32)
             data.kmer = torch.tensor(self.fea_kmer[seq_str],dtype=torch.float32)
