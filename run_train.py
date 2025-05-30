@@ -43,7 +43,7 @@ checkpoint_folder = "./checkpoints"
 
 if __name__ == '__main__':
 
-    input_path = './data/lncRNA_6000.fasta'
+    # input_path = './data/lncRNA_6000.fasta'
 
     folding_path = './features/lnctracker_foldings.pkl'
     cksnap_path = './features/lnctracker_cksnap.pkl'
