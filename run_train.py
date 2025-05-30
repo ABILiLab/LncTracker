@@ -66,9 +66,9 @@ if __name__ == '__main__':
     #     pickle.dump(kmer_encoding, handle)
     # print("CKSNAP and Kmer encoding done.")
 
-    # foldings = pickle.load(open(folding_path, "rb"))
-    # features_cksnap = pickle.load(open(cksnap_path, "rb"))
-    # features_kmer = pickle.load(open(kmer_path, "rb"))
+    foldings = pickle.load(open(folding_path, "rb"))
+    features_cksnap = pickle.load(open(cksnap_path, "rb"))
+    features_kmer = pickle.load(open(kmer_path, "rb"))
 
     all_locations = set()
     for i in df['Label']:
