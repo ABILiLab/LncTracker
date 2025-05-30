@@ -116,7 +116,6 @@ def evaluate_all_metrics(targets, predict, isMultiLabel, thres=0.5):
             "AUC": AUCs
         }
     else:
-        # 值最大的判为1, 其余为0
         predict_binary = np.zeros_like(predict)
         predict_binary[np.arange(predict.shape[0]), predict.argmax(axis=1)] = 1
         ex_acc = round(example_accuracy(targets, predict_binary),3)
