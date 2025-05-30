@@ -4,6 +4,159 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GCNConv, NNConv, GINConv, GATConv, global_add_pool, Set2Set
 
+import torch
+import numpy as np
+from metrics import *
+
+# single fold training
+def train_valid(model, train_loader, valid_loader, epochs, patience, optimizer, scheduler, criterion, thres, checkpoint_folder, isMultiLabel, device):
+        
+    best_val_auc = 0
+    best_model = None
+    best_val_loss = float('inf')
+    no_improvement_count = 0  # 
+    for epoch in range(epochs):
+        print(f'Epoch {epoch + 1} of {epochs}')
+        # print(f"Now is {datetime.now()}, training...")
+        train_loss = train_step(model, train_loader, optimizer, criterion, device)
+        # print(f"Now is {datetime.now()}, training {len(train_loader)} batchs done ...")
+        valid_loss, val_auc = valid_step(model, valid_loader, criterion, thres, isMultiLabel, device)
+
+        print(f'Training Loss: {train_loss:.4f}, Validation Loss: {valid_loss:.4f}')
+        
+        scheduler.step()
+        if val_auc > best_val_auc:
+            print(f"Get best AUC:{val_auc}!!!")
+            best_val_auc = val_auc
+            best_model = model
+            
+        if valid_loss < best_val_loss:
+            best_val_loss = valid_loss
+            no_improvement_count = 0 
+        else:
+            no_improvement_count += 1 
+
+        if no_improvement_count >= patience:
+            print(f"Early stopping at epoch {epoch + 1} due to no improvement in validation loss for {patience} epochs.")
+            break
+    
+    best_model = best_model.to(device)
+    torch.save(best_model.state_dict(), f"{checkpoint_folder}/model_auc_{best_val_auc}.pth")
+    print("Model has saved at", f"{checkpoint_folder}/model_auc_{best_val_auc}.pth")
+    return best_model
+    
+def train_step(model, train_loader, optimizer, criterion, device):
+    print('Training...')
+    model.train()
+    counter = 0
+    train_loss = 0
+
+    for data in train_loader:
+        
+        counter += 1
+        data = data.to(device)
+        targets = data.y
+        if not data.cksnap.shape[1]==96:
+            print(data.cksnap.shape) 
+            continue
+
+        _, outputs = model(data)  
+
+        loss = criterion(outputs, targets)
+        train_loss += loss.item()
+
+        optimizer.zero_grad()
+
+        loss.backward()
+        max_norm = 1.0
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
+        optimizer.step()
+
+    train_total_loss = train_loss / counter
+    return train_total_loss
+
+def valid_step(model, val_loader, criterion, thres=0.5, isMultiLabel=True, device="cuda"):
+    print('----------------------Validating---------------------------')
+    model.eval()
+    counter = 0
+    val_loss = 0.0
+    all_predictions = []
+    all_targets = []
+
+    with torch.no_grad():
+        for i, data in enumerate(val_loader):
+            counter += 1
+            if not data.cksnap.shape[1]==96:
+                print(data.cksnap.shape) 
+                continue
+            # outputs = model(graph1, graph2, cksnap, kmer)
+            data = data.to(device)
+            targets = data.y.to(device)
+            
+            _, outputs = model(data) 
+            
+
+            loss = criterion(outputs, targets)
+            val_loss += loss.item()
+
+            all_predictions.extend(outputs.cpu().numpy().tolist())
+            all_targets.extend(targets.cpu().numpy().tolist())
+        val_total_loss = val_loss / counter
+
+        all_predictions = np.array(all_predictions)
+        all_targets = np.array(all_targets)
+        metrics = evaluate_all_metrics(all_targets, all_predictions, isMultiLabel, thres)
+
+        for k, v in metrics.items():
+            if isinstance(v, float):
+                print(f"{k}: {v:.4f}")
+            else:
+                print(f"{k}: {v}")
+        return val_total_loss, metrics['Average AUC']
+
+# def predict(model, test_loader, thres=0.5, device="cuda"):
+#     print('Predicting ')
+#     res = []
+#     with torch.no_grad():
+#         for batch in test_loader:
+#             if device == "cpu":
+#                 data = batch.apply(lambda x: x.cpu() if isinstance(x, torch.Tensor) else x)
+#             else:
+#                 data = batch.apply(lambda x: x.cuda() if isinstance(x, torch.Tensor) else x)
+#             # print(data.x.device)
+#             des = data.des
+#             _, outputs = model(data)
+#             output_list = outputs.cpu().numpy().tolist()
+#             outputs = [[des[i]] + output_list[i] for i in range(len(output_list))]
+#             res.extend(outputs)
+#     return np.array(res)
+
+def predict(model, test_loader, thres=0.5, device="cuda"):
+    print('Predicting...')
+    prob_results = []
+    binary_results = []
+
+    model.eval()
+    with torch.no_grad():
+        for batch in test_loader:
+            # 将数据转移到指定设备
+            data = batch.apply(lambda x: x.to(device) if isinstance(x, torch.Tensor) else x)
+            
+            des = data.des  # 序列ID
+            _, outputs = model(data)  # 模型输出：预测概率
+            probs = outputs.cpu().numpy()  # (B, num_classes)
+
+            # 二值化
+            binary_preds = (probs >= thres).astype(int)
+
+            # 组合结果
+            for i in range(len(probs)):
+                prob_results.append([des[i]] + probs[i].tolist())
+                binary_results.append([des[i]] + binary_preds[i].tolist())
+
+    return np.array(binary_results), np.array(prob_results)
+    
+
 class FeatureSelfAttention(nn.Module):
     def __init__(self, feature_dim):
         super(FeatureSelfAttention, self).__init__()
@@ -137,9 +290,9 @@ class Channel_Embedding(nn.Module):
         self.backbone = TransformerModel(layer_num, feature_size=embedding_dim, d_k=hidden_dim//head_num, num_heads=head_num, max_relative_distance=max_relative_distance, dropout_rate=0.1, enhance=enhance)
 
 
-    def forward(self, data):
+    def forward(self, x):
         # print(data['sub_seq_embedding'].device, self.embedding.weight.device)
-        x = data['sub_seq_embedding'] @ self.embedding.weight 
+        x = x @ self.embedding.weight 
         x = self.dropout(x)
         
         x,attenton_socres = self.backbone(x, None, None) 
@@ -152,32 +305,33 @@ class LncTracker(nn.Module):
     
     def __init__(self, tokenizer,n_features, hidden_dim, embedding_dim, n_classes, n_conv_layers=3, dropout=0.2,
                  conv_type="GAT", n_trans_layers=8, head_num=8, softmax=False,
-                 batch_norm=True,  batch_size=128):
+                 batch_norm=True,  batch_size=128, activaton_function="sigmoid"):
         super(LncTracker, self).__init__()
 
         #
         self.batch_size = batch_size
         self.convs = nn.ModuleList()
         self.batch_norms = nn.ModuleList()
+        self.activaton_function = activaton_function
         '''Transformer'''
-        self.transformer = Channel_Embedding(tokenizer.label_count, tokenNum=tokenizer.token_count,embedding_dim=embedding_dim, enhance=1,
-                              layer_num=n_trans_layers, hidden_dim=256, head_num=head_num, max_relative_distance=20,
+        self.transformer = Channel_Embedding(tokenizer.label_count, tokenNum=tokenizer.token_count,embedding_dim=hidden_dim, enhance=1,
+                              layer_num=n_trans_layers, hidden_dim=hidden_dim, head_num=head_num, max_relative_distance=20,
                               embDropout=dropout, paddingIdx=tokenizer.token2id['[PAD]'])
 
         '''GNN1'''
-        self.convs.append(self.get_conv_layer(n_features, hidden_dim*2, conv_type=conv_type))
-        self.batch_norms.append(nn.BatchNorm1d(hidden_dim*2))
+        self.convs.append(self.get_conv_layer(n_features, hidden_dim//2, conv_type=conv_type))
+        self.batch_norms.append(nn.BatchNorm1d(hidden_dim//2))
 
         for i in range(n_conv_layers - 1):
-            self.convs.append(self.get_conv_layer(hidden_dim*2, hidden_dim*2, conv_type=conv_type))
-            self.batch_norms.append(nn.BatchNorm1d(hidden_dim*2))
+            self.convs.append(self.get_conv_layer(hidden_dim//2, hidden_dim//2, conv_type=conv_type))
+            self.batch_norms.append(nn.BatchNorm1d(hidden_dim//2))
    
         self.relu = nn.ReLU()
 
         self.pool = nn.AdaptiveMaxPool1d(1)
 
-        self.mlp_cksnap = nn.Sequential(nn.Linear(96, 128, bias=True), nn.ReLU())
-        self.mlp_kmer = nn.Sequential(nn.Linear(1024, 128, bias=True), nn.ReLU())
+        self.mlp_cksnap = nn.Sequential(nn.Linear(96, hidden_dim, bias=True), nn.ReLU())
+        self.mlp_kmer = nn.Sequential(nn.Linear(1024, hidden_dim, bias=True), nn.ReLU())
         
         self.self_attention1 = FeatureSelfAttention(feature_dim=96)
         self.self_attention2 = FeatureSelfAttention(feature_dim=1024)
@@ -186,11 +340,14 @@ class LncTracker(nn.Module):
         self.fc2 = nn.Linear(128, n_classes)
     
 
-        self.pooling1 = Set2Set(hidden_dim*2, processing_steps=2)
+        self.pooling1 = Set2Set(hidden_dim//2, processing_steps=2)
 
         self.dropout = nn.Dropout(dropout)
         self.conv_type = conv_type
         self.batch_norm = batch_norm
+
+        self.norm_channel = nn.LayerNorm(hidden_dim)
+        
 
 
     def forward(self, data): 
@@ -198,7 +355,8 @@ class LncTracker(nn.Module):
 
         g1, adj1, edge_attr1, batch1 = data.x, data.edge_index, data.edge_attr, data.batch 
 
-        x_transformer, transformer_as = self.transformer(data)
+        x_embedding = data.sub_seq_embedding
+        x_transformer, transformer_as = self.transformer(x_embedding)
 
         x_cksnap=data.cksnap 
         x_kmer=data.kmer 
@@ -220,14 +378,25 @@ class LncTracker(nn.Module):
         x2, weight_kmer = self.self_attention2(x_kmer)
         x2 = self.mlp_kmer(x2)
 
+        # print(x1.shape, x2.shape, x_transformer.shape, g1.shape)
+        x1 = self.norm_channel(x1)
+        x2 = self.norm_channel(x2)
+        x_transformer = self.norm_channel(x_transformer)
+        g1 = self.norm_channel(g1)
         x = torch.cat((x1, x2, x_transformer, g1),dim=1)
+
         embeddings = x
         x = torch.relu(x)
         x = self.fc1(x)
         x = torch.relu(x)
         x = self.fc2(x)
         
-        output = torch.sigmoid(x)
+        if self.activaton_function == "sigmoid":
+            output = torch.sigmoid(x)
+        elif self.activaton_function == "softmax":
+            output = F.softmax(x, dim=1)
+        else:
+            output = x
         return embeddings, output
 
 
