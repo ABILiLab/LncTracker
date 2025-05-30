@@ -53,22 +53,22 @@ if __name__ == '__main__':
 
     # If the features of the sequence have not been computed yet, cancel the following comment markers
 
-    out_fasta_dot = "./features/temp_fasata_dot"
-    utils.linear_fold(list(df['Sequence']), list(df['Description']), out_fasta_dot)
-    utils.dot_fasta_to_pkl(out_fasta_dot+".fasta", folding_path)
-    print("Folding done.")
-    kw = {'order': 'ACGT'}
-    cksnap_encoding = utils.CKSNAP(input_path, gap=5, **kw)
-    kmer_encoding = utils.Kmer(input_path, k=5, type="RNA", upto=False, normalize=True, **kw)
-    with open(cksnap_path, 'wb') as handle:
-        pickle.dump(cksnap_encoding, handle)
-    with open(kmer_path, 'wb') as handle:
-        pickle.dump(kmer_encoding, handle)
-    print("CKSNAP and Kmer encoding done.")
+    # out_fasta_dot = "./features/temp_fasata_dot"
+    # utils.linear_fold(list(df['Sequence']), list(df['Description']), out_fasta_dot)
+    # utils.dot_fasta_to_pkl(out_fasta_dot+".fasta", folding_path)
+    # print("Folding done.")
+    # kw = {'order': 'ACGT'}
+    # cksnap_encoding = utils.CKSNAP(input_path, gap=5, **kw)
+    # kmer_encoding = utils.Kmer(input_path, k=5, type="RNA", upto=False, normalize=True, **kw)
+    # with open(cksnap_path, 'wb') as handle:
+    #     pickle.dump(cksnap_encoding, handle)
+    # with open(kmer_path, 'wb') as handle:
+    #     pickle.dump(kmer_encoding, handle)
+    # print("CKSNAP and Kmer encoding done.")
 
-    foldings = pickle.load(open(folding_path, "rb"))
-    features_cksnap = pickle.load(open(cksnap_path, "rb"))
-    features_kmer = pickle.load(open(kmer_path, "rb"))
+    # foldings = pickle.load(open(folding_path, "rb"))
+    # features_cksnap = pickle.load(open(cksnap_path, "rb"))
+    # features_kmer = pickle.load(open(kmer_path, "rb"))
 
     all_locations = set()
     for i in df['Label']:
