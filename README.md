@@ -78,4 +78,5 @@ nohup python -u run_predict.py \
 - `--device`: Computation device ('cpu' or 'cuda').
 
 ### Citation
-If you want to use LncTracker, please cite the following publication: Y. Hao et al., "LncTracker: a unified multi-channel framework for multi-label lncRNA localization," in IEEE Journal of Biomedical and Health Informatics, Aug 2025, doi: 10.1109/JBHI.2025.3597589
+
+Please cite our publication when you use LncTracker: Hao et al., "LncTracker: a unified multi-channel framework for multi-label lncRNA localization," _IEEE Journal of Biomedical and Health Informatics_, Aug 2025, doi: 10.1109/JBHI.2025.3597589
