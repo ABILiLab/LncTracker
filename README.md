@@ -76,3 +76,5 @@ nohup python -u run_predict.py \
 - `--isMultiLabel`: Whether it’s a multi-label classification task.
 - `--isAutoThres`: Whether to use automatic threshold selection.
 - `--device`: Computation device ('cpu' or 'cuda').
+
+If you want to use LncTracker, please cite the following publication: Y. Hao et al., "LncTracker: a unified multi-channel framework for multi-label lncRNA localization," in IEEE Journal of Biomedical and Health Informatics, doi: 10.1109/JBHI.2025.3597589
