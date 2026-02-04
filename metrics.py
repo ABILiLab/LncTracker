@@ -117,13 +117,8 @@ def evaluate_all_metrics(targets, predict, isMultiLabel, thres=0.5):
         predict_binary = np.zeros_like(predict)
         predict_binary[np.arange(predict.shape[0]), predict.argmax(axis=1)] = 1
         ex_acc = round(example_accuracy(targets, predict_binary),3)
-        # ham_loss = round(hamming_loss(targets, predict_binary),3)
         one_error = round(zero_one_loss(targets, predict_binary, normalize=True),3)
-        # cov = round(coverage_error(targets, predict_binary),3)
-        # rank_loss = round(label_ranking_loss(targets, predict_binary),3)
-        # ap = round(average_precision_score(targets, predict_binary, average='weighted'),3)
-        # single_label_acc = label_accuracy(targets, predict_binary)
-        # single_label_recall = label_recall(targets, predict_binary)
+
 
         mccs = []
         for i in range(targets.shape[1]):
